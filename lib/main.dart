@@ -111,30 +111,42 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<File?> _captureDocumentImage(ImageSource source) async {
+    // Use the ML Kit DocumentScanner only for camera captures.
+    // For gallery uploads, skip the scanner and open the image picker directly.
     if (Platform.isAndroid || Platform.isIOS) {
-      try {
-        final scanner = DocumentScanner(
-          options: DocumentScannerOptions(
-            documentFormats: const {DocumentFormat.jpeg},
-            pageLimit: 1,
-            mode: ScannerMode.full,
-            isGalleryImport: source == ImageSource.gallery,
-          ),
-        );
+      if (source == ImageSource.camera) {
         try {
-          final result = await scanner.scanDocument();
-          final images = result.images;
-          if (images != null && images.isNotEmpty) {
-            return File(images.first);
+          final scanner = DocumentScanner(
+            options: DocumentScannerOptions(
+              documentFormats: const {DocumentFormat.jpeg},
+              pageLimit: 1,
+              mode: ScannerMode.full,
+              isGalleryImport: false,
+            ),
+          );
+          try {
+            final result = await scanner.scanDocument();
+            final images = result.images;
+            if (images != null && images.isNotEmpty) {
+              return File(images.first);
+            }
+            // If the scanner returned no images (user cancelled or no capture),
+            // do not fall back to reopening the camera or picker — signal
+            // cancellation by returning null.
+            return null;
+          } finally {
+            await scanner.close();
           }
-        } finally {
-          await scanner.close();
+        } catch (e) {
+          // If scanner throws (for example user pressed back), treat as
+          // cancelled and do not re-open camera/picker.
+          return null;
         }
-      } catch (e) {
-        // Fall through to the regular picker.
       }
     }
 
+    // For non-camera sources (gallery) or non-mobile platforms, use the
+    // image picker directly.
     final picked = await _picker.pickImage(source: source, imageQuality: 90);
     if (picked == null) return null;
     return File(picked.path);
